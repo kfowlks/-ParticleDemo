@@ -1,0 +1,246 @@
+
+#include <stdio.h>
+#include <string.h>
+#include <malloc.h>
+#include <kallisti/ta.h>
+#include <kallisti/video.h>
+#include <kallisti/fs.h>
+#include <kallisti/controller.h>
+#include <kallisti/maple.h>
+#include <kallisti/timer.h>
+#include <kallisti/fs/iso9660.h>
+#include "math.h"
+#include "3dutil.h"
+#include "matrix.h"
+
+int joy_x=0,joy_y=0;
+
+
+
+float coords[8][3] = {
+    { -1.0, -1.0, -1.0 },
+    {  1.0, -1.0, -1.0 },
+    { -1.0,  1.0, -1.0 },
+    {  1.0,  1.0, -1.0 },
+    { -1.0, -1.0,  1.0 },
+    {  1.0, -1.0,  1.0 },
+    { -1.0,  1.0,  1.0 },
+    {  1.0,  1.0,  1.0 },
+};
+
+/* transformed coordinates */
+
+float trans_coords2[8][4];
+#define RGB565(r,g,b) ((r >> 3) << 11)| ((g >> 2) << 5)| ((b >> 3) << 0)
+
+
+
+uint8 check_control() {
+	uint8 mcont=0;
+	cont_cond_t cond;
+    
+	if (!mcont) 
+	{
+
+        mcont = maple_first_device(MAPLE_FUNC_CONTROLLER);
+		if (!mcont) 
+		{
+			printf("No controllers attached\r\n");
+			return 0;
+		}
+		
+		return mcont;
+
+	}
+}
+
+
+void Kill_Program()
+{
+   timer_shutdown();
+   maple_shutdown();
+   fs_iso9660_shutdown();
+   ta_shutdown();
+   vid_shutdown();
+
+	return ;
+}
+
+int main(void)
+{
+
+  poly_hdr_t poly; /* Our Basic Textured Poly  */
+    
+  
+  unsigned int tex; /* Pointer to Texture Memory  */
+  unsigned int f14_tex;
+
+  uint32 i=0;  
+  uint32 count = 0; 
+
+  float test=0.0;
+  float f14_coords[8000][3]; /* IMPORTANT: You must addjest these to the number of vertices in the model  */
+  
+  uint8 mcont=0;
+  
+  cont_cond_t cond;
+  unsigned short *temp = malloc(256*256*sizeof(unsigned short));
+  unsigned  char *data = malloc(256*256*4); /* Need a better way to allocate file size but..it's only temp */
+
+  /* _object struct is defined in math.h used for 3DS Files*/
+  _object testdummy, f14;;
+  
+  vid_init(DM_640x480,PM_RGB565); 
+  ta_init();
+  vid_border_color(63,200,63);
+  fs_iso9660_init();
+  maple_init();
+  
+   
+  mcont=check_control();
+
+  /* change arg 3 to a 1 to view 3ds file debug info  */
+  if (load3dsfile("f14.3ds", &f14,0) == 1) {
+      Kill_Program();
+	  return 0;
+  }
+
+	if (load3dsfile("biplane.3ds", &testdummy,0) == 1) {
+      Kill_Program();
+	  return 0;
+  }
+
+
+ /*  Loads Texture Auto Increment*/
+  if (!LoadTexture("f14.tga",data,temp)) {Kill_Program();} 
+   
+	  f14_tex = tex_load(temp,(256*256)*sizeof(unsigned short));
+
+
+  if (!LoadTexture("biplane.tga",data,temp)) {Kill_Program();} 
+   
+	  tex = tex_load(temp,(256*256)*sizeof(unsigned short));
+
+
+
+   /* Ok lets free some memory */
+   if (temp) free(temp);
+   if (data) free(data);
+
+
+  printf("Numverts =  %d  \r\n",testdummy.numverts);
+  printf("NumPolys =  %d   \r\n",testdummy.numpolys);
+  printf("NumUV  =  %d   \r\n",testdummy.numuv);
+    
+  printf("Entering Main Loop \r\n");
+  
+
+  
+
+  while(count < 900)
+  {
+  
+    ta_begin_render(); 
+    
+    clear_matrix();
+    
+    apply_matrix(&screenview_matrix);
+   // apply_matrix(&translation_matrix);
+	apply_matrix(&projection_matrix);
+//	apply_matrix(&camera_matrix);
+
+
+  
+//	translate(0.0, 0.0, 45.0);
+	
+
+	//translate(0.0, 0.0, 5.0);
+
+    rotate_x(90*34/5);
+    rotate_z(count*47/9);
+ //   rotate_y(count*47/9);
+   translate(0.0+joy_x,0.0,48.0+joy_y);
+    		
+	
+
+//	draw_3ds(testdummy,tex,0);
+
+	draw_3ds(f14,f14_tex,256,256);
+
+    ta_commit_eol();
+
+    /* TA freaks out at having a completely empty list */
+
+    ta_poly_hdr_col(&poly, TA_TRANSLUCENT);
+    ta_commit_poly_hdr(&poly);
+
+	ta_commit_eol();
+
+
+    /* Must Call to Finish Rendering Process*/
+    ta_finish_frame();
+
+
+
+	/* Check for start on the controller */
+	if (cont_get_cond(mcont, &cond)) {
+		printf("Error getting controller status\r\n");
+			count=990;
+		//return 0;
+	}
+		
+	if (!(cond.buttons & CONT_START)) {
+		printf("Pressed start\r\n");
+		
+		Kill_Program();
+		return 0;
+
+	}
+
+
+	if (!(cond.buttons & CONT_DPAD_UP)) {
+		    joy_y=joy_y-1.0;
+	}
+	
+	if (!(cond.buttons & CONT_DPAD_DOWN)) {
+		  joy_y=joy_y+1.0;
+
+	}
+	
+	if (!(cond.buttons & CONT_DPAD_LEFT)) {
+		joy_x=joy_x-1.0;
+
+	}
+
+	if (!(cond.buttons & CONT_DPAD_RIGHT)) 
+		joy_x=joy_x+1.0;
+	
+
+
+
+
+    count++;
+
+  }
+
+   printf("Exiting Main Loop \r\n",testdummy.numuv);
+
+/*
+   if (testdummy.tri) free(testdummy.tri);
+   if (testdummy.facelist) free(testdummy.facelist);
+   if (testdummy.texmap) free(testdummy.texmap);
+  */
+   
+   timer_shutdown();
+   maple_shutdown();
+   fs_iso9660_shutdown();
+   ta_shutdown();
+   vid_shutdown();
+
+    
+  
+  return 0;
+
+}
+
+
